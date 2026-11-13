@@ -152,6 +152,16 @@ def forecast_market(prices, horizon):
     return rows
 
 
+def baseline_forecast_market(prices, horizon):
+    """Pure house-baseline shape, used as a last-resort fallback if the
+    empirical model raises for some unexpected input."""
+    x0 = prices[-1]
+    rows = []
+    for h in range(1, horizon + 1):
+        rows.append(sorted(price6(x0 + z * BASE_SIGMA * math.sqrt(h)) for z in Z))
+    return rows
+
+
 def main():
     Path(OUTPUT_DIR).mkdir(parents=True, exist_ok=True)
     files = sorted(f for f in os.listdir(INPUT_DIR) if f.endswith(".in"))
@@ -168,7 +178,14 @@ def main():
             prices = m["prices"]
             if not prices:
                 raise ValueError(f"market {m['id']} has no prices")
-            rows = forecast_market(prices, horizon)
+            # A crash in the empirical model for one odd market must not
+            # invalidate the whole case (an invalid case is scored as if
+            # every quantile were 0.5 and disqualifies the entry from any
+            # prize): fall back to the exact house baseline formula instead.
+            try:
+                rows = forecast_market(prices, horizon)
+            except Exception:
+                rows = baseline_forecast_market(prices, horizon)
             forecasts.append({"id": m["id"], "q": rows})
         out_path = os.path.join(OUTPUT_DIR, f"{case_id}.out")
         with open(out_path, "w", encoding="utf-8") as f:
